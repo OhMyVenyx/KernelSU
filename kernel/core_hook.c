@@ -33,6 +33,7 @@
 #include <linux/rcupdate.h>
 #include "linux/seq_file.h"
 #include <linux/vmalloc.h>
+#include "../../fs/mount.h"
 #endif
 
 #include "allowlist.h"
@@ -48,6 +49,51 @@
 #include "kernel_compat.h"
 
 static bool ksu_module_mounted = false;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+extern inline bool may_mount(void);
+extern inline int check_mnt(struct mount *mnt);
+extern void mntput_no_expire(struct mount *mnt);
+extern int do_umount(struct mount *mnt, int flags);
+static inline bool ksu_path_mounted(const struct path *path)
+	{
+		return path->mnt->mnt_root == path->dentry;
+	}
+	static int ksu_can_umount(const struct path *path, int flags)
+	{
+		struct mount *mnt = real_mount(path->mnt);
+
+		if (!may_mount())
+			return -EPERM;
+		if (!ksu_path_mounted(path))
+			return -EINVAL;
+		if (!check_mnt(mnt))
+			return -EINVAL;
+		if (mnt->mnt.mnt_flags & MNT_LOCKED) /* Check optimistically */
+			return -EINVAL;
+		if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))
+			return -EPERM;
+		return 0;
+	}
+	int ksu_path_umount(struct path *path, int flags)
+{
+	struct mount *mnt = real_mount(path->mnt);
+	int ret;
+
+	ret = ksu_can_umount(path, flags);
+	if (!ret)
+		ret = do_umount(mnt, flags);
+
+	/* we mustn't call path_put() as that would clear mnt_expiry_mark */
+	dput(path->dentry);
+	mntput_no_expire(mnt);
+	return ret;
+}
+#else
+	//not tested
+#endif
 
 extern int handle_sepolicy(unsigned long arg3, void __user *arg4);
 int vmin_ksu = KERNEL_SU_VERSION;
@@ -459,6 +505,15 @@ static void ksu_umount_mnt(struct path *path, int flags)
 	if (err) {
 		pr_info("umount %s failed: %d\n", path->dentry->d_iname, err);
 	}
+
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+	int err = ksu_path_umount(path, flags);
+	if (err) {
+		pr_info("umount %s failed: %d\n", path->dentry->d_iname, err);
+	}
+#else
+	//not tested
+#endif
 }
 
 static void try_umount(const char *mnt, bool check_mnt, int flags)

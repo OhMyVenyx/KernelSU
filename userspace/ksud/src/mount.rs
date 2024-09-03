@@ -55,24 +55,26 @@ impl Drop for AutoMountExt4 {
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn mount_ext4(source: impl AsRef<Path>, target: impl AsRef<Path>) -> Result<()> {
-    let new_loopback = loopdev::LoopControl::open()?.next_free()?;
-    new_loopback.with().attach(source)?;
+    let new_loopback = loopdev::LoopControl::open()?
+        .next_free()
+        .with_context(|| "Failed to alloc loop")?;
+    new_loopback
+        .with()
+        .attach(source)
+        .with_context(|| "Failed to attach loop")?;
     let lo = new_loopback.path().ok_or(anyhow!("no loop"))?;
-    if let Result::Ok(fs) = fsopen("ext4", FsOpenFlags::FSOPEN_CLOEXEC) {
-        let fs = fs.as_fd();
-        fsconfig_set_string(fs, "source", lo)?;
-        fsconfig_create(fs)?;
-        let mount = fsmount(fs, FsMountFlags::FSMOUNT_CLOEXEC, MountAttrFlags::empty())?;
-        move_mount(
-            mount.as_fd(),
-            "",
-            CWD,
-            target.as_ref(),
-            MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH,
-        )?;
-    } else {
-        mount(lo, target.as_ref(), "ext4", MountFlags::empty(), "")?;
-    }
+    let fs = fsopen("ext4", FsOpenFlags::FSOPEN_CLOEXEC)?;
+    let fs = fs.as_fd();
+    fsconfig_set_string(fs, "source", lo)?;
+    fsconfig_create(fs)?;
+    let mount = fsmount(fs, FsMountFlags::FSMOUNT_CLOEXEC, MountAttrFlags::empty())?;
+    move_mount(
+        mount.as_fd(),
+        "",
+        CWD,
+        target.as_ref(),
+        MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH,
+    )?;
     Ok(())
 }
 
@@ -104,14 +106,21 @@ pub fn mount_overlayfs(
         upperdir,
         workdir
     );
-    if let Result::Ok(fs) = fsopen("overlay", FsOpenFlags::FSOPEN_CLOEXEC) {
+
+    let upperdir = upperdir
+        .filter(|up| up.exists())
+        .map(|e| e.display().to_string());
+    let workdir = workdir
+        .filter(|wd| wd.exists())
+        .map(|e| e.display().to_string());
+
+    let result = (|| {
+        let fs = fsopen("overlay", FsOpenFlags::FSOPEN_CLOEXEC)?;
         let fs = fs.as_fd();
-        fsconfig_set_string(fs, "lowerdir", lowerdir_config)?;
-        if let (Some(upperdir), Some(workdir)) = (upperdir, workdir) {
-            if upperdir.exists() && workdir.exists() {
-                fsconfig_set_string(fs, "upperdir", upperdir.display().to_string())?;
-                fsconfig_set_string(fs, "workdir", workdir.display().to_string())?;
-            }
+        fsconfig_set_string(fs, "lowerdir", &lowerdir_config)?;
+        if let (Some(upperdir), Some(workdir)) = (&upperdir, &workdir) {
+            fsconfig_set_string(fs, "upperdir", upperdir)?;
+            fsconfig_set_string(fs, "workdir", workdir)?;
         }
         fsconfig_set_string(fs, "source", KSU_OVERLAY_SOURCE)?;
         fsconfig_create(fs)?;
@@ -122,17 +131,14 @@ pub fn mount_overlayfs(
             CWD,
             dest.as_ref(),
             MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH,
-        )?;
-    } else {
+        )
+    })();
+
+    if let Err(e) = result {
+        warn!("fsopen mount failed: {:#}, fallback to mount", e);
         let mut data = format!("lowerdir={lowerdir_config}");
         if let (Some(upperdir), Some(workdir)) = (upperdir, workdir) {
-            if upperdir.exists() && workdir.exists() {
-                data = format!(
-                    "{data},upperdir={},workdir={}",
-                    upperdir.display(),
-                    workdir.display()
-                );
-            }
+            data = format!("{data},upperdir={upperdir},workdir={workdir}");
         }
         mount(
             KSU_OVERLAY_SOURCE,
@@ -148,27 +154,18 @@ pub fn mount_overlayfs(
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn mount_tmpfs(dest: impl AsRef<Path>) -> Result<()> {
     info!("mount tmpfs on {}", dest.as_ref().display());
-    if let Result::Ok(fs) = fsopen("tmpfs", FsOpenFlags::FSOPEN_CLOEXEC) {
-        let fs = fs.as_fd();
-        fsconfig_set_string(fs, "source", KSU_OVERLAY_SOURCE)?;
-        fsconfig_create(fs)?;
-        let mount = fsmount(fs, FsMountFlags::FSMOUNT_CLOEXEC, MountAttrFlags::empty())?;
-        move_mount(
-            mount.as_fd(),
-            "",
-            CWD,
-            dest.as_ref(),
-            MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH,
-        )?;
-    } else {
-        mount(
-            KSU_OVERLAY_SOURCE,
-            dest.as_ref(),
-            "tmpfs",
-            MountFlags::empty(),
-            "",
-        )?;
-    }
+    let fs = fsopen("tmpfs", FsOpenFlags::FSOPEN_CLOEXEC)?;
+    let fs = fs.as_fd();
+    fsconfig_set_string(fs, "source", KSU_OVERLAY_SOURCE)?;
+    fsconfig_create(fs)?;
+    let mount = fsmount(fs, FsMountFlags::FSMOUNT_CLOEXEC, MountAttrFlags::empty())?;
+    move_mount(
+        mount.as_fd(),
+        "",
+        CWD,
+        dest.as_ref(),
+        MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH,
+    )?;
     Ok(())
 }
 
@@ -179,29 +176,20 @@ pub fn bind_mount(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<()> {
         from.as_ref().display(),
         to.as_ref().display()
     );
-    if let Result::Ok(tree) = open_tree(
+    let tree = open_tree(
         CWD,
         from.as_ref(),
         OpenTreeFlags::OPEN_TREE_CLOEXEC
             | OpenTreeFlags::OPEN_TREE_CLONE
             | OpenTreeFlags::AT_RECURSIVE,
-    ) {
-        move_mount(
-            tree.as_fd(),
-            "",
-            CWD,
-            to.as_ref(),
-            MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH,
-        )?;
-    } else {
-        mount(
-            from.as_ref(),
-            to.as_ref(),
-            "",
-            MountFlags::BIND | MountFlags::REC,
-            "",
-        )?;
-    }
+    )?;
+    move_mount(
+        tree.as_fd(),
+        "",
+        CWD,
+        to.as_ref(),
+        MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH,
+    )?;
     Ok(())
 }
 

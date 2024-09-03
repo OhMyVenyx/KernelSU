@@ -6,7 +6,7 @@ const pkg = require('vitepress/package.json')
 
 export default defineConfig({
   lang: 'zh-TW',
-  description: '一個以核心為基礎，適用於 Android GKI 的 Root 解決方案。',
+  description: '一個基於核心，適用於 Android GKI 的 Root 解決方案。',
 
   themeConfig: {
     nav: nav(),
@@ -45,11 +45,14 @@ function sidebarGuide() {
         text: 'Guide',
         items: [
           { text: '什麼是 KernelSU？', link: '/zh_TW/guide/what-is-kernelsu' },
+          { text: 'KernelSU 與 Magisk 的差異', link: '/zh_TW/guide/difference-with-magisk' },
           { text: '安裝', link: '/zh_TW/guide/installation' },
           { text: '如何建置？', link: '/zh_TW/guide/how-to-build' },
           { text: '如何為非 GKI 核心整合 KernelSU', link: '/zh_TW/guide/how-to-integrate-for-non-gki'},
           { text: '非官方支援裝置', link: '/zh_TW/guide/unofficially-support-devices.md' },
           { text: '模組指南', link: '/zh_TW/guide/module.md' },
+          { text: '模組 WebUI', link: '/zh_TW/guide/module-webui.md' },
+          { text: 'App Profile', link: '/zh_TW/guide/app-profile.md' },
           { text: '搶救開機迴圈', link: '/zh_TW/guide/rescue-from-bootloop.md' },
           { text: '常見問題', link: '/zh_TW/guide/faq' },
           { text: '隱藏功能', link: '/zh_TW/guide/hidden-features' },

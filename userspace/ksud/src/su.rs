@@ -17,38 +17,23 @@ use rustix::{
     thread::{set_thread_res_gid, set_thread_res_uid, Gid, Uid},
 };
 
-const EVENT_POST_FS_DATA: u64 = 1;
-const EVENT_BOOT_COMPLETED: u64 = 2;
-const EVENT_MODULE_MOUNTED: u64 = 3;
-
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn grant_root(global_mnt: bool) -> Result<()> {
-    const KERNEL_SU_OPTION: u32 = 0xDEAD_BEEF;
-    const CMD_GRANT_ROOT: u64 = 0;
+    rustix::process::ksu_grant_root()?;
 
-    let mut result: u32 = 0;
-    unsafe {
-        #[allow(clippy::cast_possible_wrap)]
-        libc::prctl(
-            KERNEL_SU_OPTION as i32, // supposed to overflow
-            CMD_GRANT_ROOT,
-            0,
-            0,
-            std::ptr::addr_of_mut!(result).cast::<libc::c_void>(),
-        );
-    }
-
-    anyhow::ensure!(result == KERNEL_SU_OPTION, "grant root failed");
-    let mut command = std::process::Command::new("sh");
+    let mut command = Command::new("sh");
     let command = unsafe {
         command.pre_exec(move || {
             if global_mnt {
                 let _ = utils::switch_mnt_ns(1);
                 let _ = utils::unshare_mnt_ns();
             }
-            std::result::Result::Ok(())
+            Result::Ok(())
         })
     };
+    // add /data/adb/ksu/bin to PATH
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    add_path_to_env(defs::BINARY_DIR)?;
     Err(command.exec().into())
 }
 
@@ -65,7 +50,7 @@ fn print_usage(program: &str, opts: Options) {
 fn set_identity(uid: u32, gid: u32, groups: &[u32]) {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     {
-        rustix::process::set_groups(
+        rustix::thread::set_thread_groups(
             groups
                 .iter()
                 .map(|g| unsafe { Gid::from_raw(*g) })
@@ -80,17 +65,17 @@ fn set_identity(uid: u32, gid: u32, groups: &[u32]) {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
 pub fn root_shell() -> Result<()> {
     unimplemented!()
 }
 
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn root_shell() -> Result<()> {
     // we are root now, this was set in kernel!
 
     use anyhow::anyhow;
-    let env_args: Vec<String> = std::env::args().collect();
+    let env_args: Vec<String> = env::args().collect();
     let program = env_args[0].clone();
     let args = env_args
         .iter()
@@ -155,7 +140,7 @@ pub fn root_shell() -> Result<()> {
         .collect::<Vec<String>>();
 
     let matches = match opts.parse(&args[1..]) {
-        std::result::Result::Ok(m) => m,
+        Result::Ok(m) => m,
         Err(f) => {
             println!("{f}");
             print_usage(&program, opts);
@@ -218,7 +203,7 @@ pub fn root_shell() -> Result<()> {
         let name = &matches.free[free_idx];
         uid = unsafe {
             #[cfg(target_arch = "aarch64")]
-            let pw = libc::getpwnam(name.as_ptr() as *const u8).as_ref();
+            let pw = libc::getpwnam(name.as_ptr()).as_ref();
             #[cfg(target_arch = "x86_64")]
             let pw = libc::getpwnam(name.as_ptr() as *const i8).as_ref();
 
@@ -283,7 +268,7 @@ pub fn root_shell() -> Result<()> {
 
             set_identity(uid, gid, &groups);
 
-            std::result::Result::Ok(())
+            Result::Ok(())
         })
     };
 
@@ -299,44 +284,4 @@ fn add_path_to_env(path: &str) -> Result<()> {
     let new_path_env = env::join_paths(paths)?;
     env::set_var("PATH", new_path_env);
     Ok(())
-}
-
-#[cfg(any(target_os = "linux", target_os = "android"))]
-pub fn get_version() -> i32 {
-    rustix::process::ksu_get_version()
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "android")))]
-pub fn get_version() -> i32 {
-    0
-}
-
-#[cfg(any(target_os = "linux", target_os = "android"))]
-fn report_event(event: u64) {
-    rustix::process::ksu_report_event(event)
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "android")))]
-fn report_event(_event: u64) {}
-
-#[cfg(any(target_os = "linux", target_os = "android"))]
-pub fn check_kernel_safemode() -> bool {
-    rustix::process::ksu_check_kernel_safemode()
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "android")))]
-pub fn check_kernel_safemode() -> bool {
-    false
-}
-
-pub fn report_post_fs_data() {
-    report_event(EVENT_POST_FS_DATA);
-}
-
-pub fn report_boot_complete() {
-    report_event(EVENT_BOOT_COMPLETED);
-}
-
-pub fn report_module_mounted() {
-    report_event(EVENT_MODULE_MOUNTED);
 }

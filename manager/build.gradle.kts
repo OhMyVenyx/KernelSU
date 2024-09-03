@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.agp.app) apply false
     alias(libs.plugins.agp.lib) apply false
     alias(libs.plugins.kotlin) apply false
+    alias(libs.plugins.compose.compiler) apply false
     alias(libs.plugins.lsplugin.cmaker)
 }
 
@@ -14,37 +15,27 @@ cmaker {
     default {
         arguments.addAll(
             arrayOf(
-                "-DANDROID_STL=c++_static",
+                "-DANDROID_STL=none",
             )
         )
-        val flags = arrayOf(
-            "-Wno-gnu-string-literal-operator-template",
-            "-Wno-c++2b-extensions",
-        )
-        cFlags.addAll(flags)
-        cppFlags.addAll(flags)
-        abiFilters("arm64-v8a", "x86_64")
+        abiFilters("arm64-v8a", "x86_64", "riscv64")
     }
     buildTypes {
         if (it.name == "release") {
-            arguments += "-DDEBUG_SYMBOLS_PATH=${buildDir.absolutePath}/symbols"
+            arguments += "-DDEBUG_SYMBOLS_PATH=${layout.buildDirectory.asFile.get().absolutePath}/symbols"
         }
     }
 }
 
 val androidMinSdkVersion = 26
-val androidTargetSdkVersion = 33
-val androidCompileSdkVersion = 34
-val androidBuildToolsVersion = "34.0.0"
-val androidCompileNdkVersion = "25.2.9519653"
-val androidSourceCompatibility = JavaVersion.VERSION_17
-val androidTargetCompatibility = JavaVersion.VERSION_17
+val androidTargetSdkVersion = 35
+val androidCompileSdkVersion = 35
+val androidBuildToolsVersion = "35.0.0"
+val androidCompileNdkVersion = "27.0.12077973"
+val androidSourceCompatibility = JavaVersion.VERSION_21
+val androidTargetCompatibility = JavaVersion.VERSION_21
 val managerVersionCode by extra(getVersionCode())
 val managerVersionName by extra(getVersionName())
-
-tasks.register<Delete>("clean") {
-    delete(rootProject.buildDir)
-}
 
 fun getGitCommitCount(): Int {
     val out = ByteArrayOutputStream()

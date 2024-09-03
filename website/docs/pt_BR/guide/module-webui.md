@@ -17,26 +17,26 @@ Os arquivos de recursos da web devem ser colocados no subdiretório `webroot` do
 ```
 
 :::warning AVISO
-Ao instalar o módulo, KernelSU definirá automaticamente as permissões e o contexto SELinux deste diretório. Se você não sabe o que está fazendo, não defina você mesmo as permissões deste diretório!
+Ao instalar o módulo, KernelSU definirá automaticamente as permissões e o contexto do SELinux deste diretório. Se você não sabe o que está fazendo, não defina você mesmo as permissões deste diretório!
 :::
 
 Se sua página contém CSS e JavaScript, você também precisa colocá-la neste diretório.
 
 ## API JavaScript
 
-Se for apenas uma página de exibição, não será diferente de uma página da web normal. Mais importante ainda, KernelSU fornece uma série de APIs de sistema que permitem implementar as funções exclusivas do módulo.
+Se for apenas uma página de exibição, não será diferente de uma página web normal. Mais importante ainda, KernelSU fornece uma série de APIs de sistema que permitem implementar as funções exclusivas do módulo.
 
-KernelSU fornece uma biblioteca JavaScript e [publica-a no npm](https://www.npmjs.com/package/kernelsu), que você pode usar no código JavaScript de suas páginas da web.
+KernelSU fornece uma biblioteca JavaScript e publica-a no [npm](https://www.npmjs.com/package/kernelsu), que você pode usar no código JavaScript de suas páginas da web.
 
 Por exemplo, você pode executar um comando shell para obter uma configuração específica ou modificar uma propriedade:
 
-```javascript
+```JavaScript
 import { exec } from 'kernelsu';
 
 const { errno, stdout } = exec("getprop ro.product.model");
 ```
 
-Para outro exemplo, você pode fazer com que a página da web seja exibida em tela inteira ou exibir um dica.
+Para outro exemplo, você pode fazer com que a página web seja exibida em tela inteira ou exibir um dica.
 
 [Documentação da API](https://www.npmjs.com/package/kernelsu)
 
@@ -45,4 +45,4 @@ Se você achar que a API existente não atende às suas necessidades ou é incon
 ## Algumas dicas
 
 1. Você pode usar `localStorage` normalmente para armazenar alguns dados, mas eles serão perdidos após a desinstalação do app gerenciador. Se precisar salvar persistentemente, você mesmo pode gravar os dados em algum diretório.
-2. Para páginas simples, recomendo que você use [parceljs](https://parceljs.org/) para empacotamento. Não requer configuração do zero e é muito conveniente de usar. Porém, se você é um mestre front-end ou tem suas próprias preferências, basta escolher o que você gosta!
+2. Para páginas simples, recomendo que você use [parceljs](https://parceljs.org/) para o empacotamento. Não requer configuração do zero e é muito conveniente de usar. Porém, se você é um mestre do front-end ou tem suas próprias preferências, basta escolher o que você gosta!
